@@ -1,3 +1,5 @@
+#BASIC GAMEPAD FUNCTIONS
+
 import board
 import busio
 import time
@@ -9,7 +11,7 @@ i2c = busio.I2C(board.SCL, board.SDA)
 device = I2CDevice(i2c, 0x21)  # Mini QWST is at 0x21
 
 # Mini QWST Constants
-INPUT_PORT0 = 0x00  
+INPUT_PORT0 = 0x00
 OUTPUT_PORT0 = 0x02  # LED control register
 LED_MAPPING = (0x6, 0x7, 0x9, 0xA)  # LED bit positions
 
@@ -20,10 +22,11 @@ BUTTON_MAPPING = {
     '+': 0xB, '-': 0x5
 }
 
-BUTTON_TO_LED = {'A': 1, 'B': 2, 'X': 3, 'Y': 4}  # Assign buttons to LEDs
+# Assign buttons to LEDs on the QWST pad
+BUTTON_TO_LED = {'L': 1, 'R': 2, 'Y': 3, 'A': 4}  # Assign buttons to LEDs
 
 # LED state tracking
-led_state = 0b0000  
+led_state = 0b0000
 last_button_state = 0  # Store previous button states
 
 def write_register_16bit(reg, value):
@@ -89,6 +92,6 @@ while True:
         if (button_state & (1 << bit_pos)) and not (last_button_state & (1 << bit_pos)):
             if button in BUTTON_TO_LED:
                 toggle_led(BUTTON_TO_LED[button])  # Toggle the assigned LED
-    
+
     last_button_state = button_state  # Store current state for debounce
     time.sleep(0.1)  # Small delay to prevent spamming
