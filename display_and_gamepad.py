@@ -7,11 +7,14 @@ import displayio
 from adafruit_display_text import label
 import busio
 import time
+import rtc
+import os
 from adafruit_bus_device.i2c_device import I2CDevice
 import struct
 
 # ----- Configurable Constants -----
 BORDER = 10
+CSV_FILENAME = "/data_log.csv"
 
 # ----- Fonts -----
 FONT_BIG = 4
@@ -80,6 +83,31 @@ def make_rect(x, y, width, height, color):
     palette[0] = color
     return displayio.TileGrid(bitmap, pixel_shader=palette, x=x, y=y)
 
+# ----- Data Entry Widget -----
+def create_score_widget(label_text):
+    widget_group = displayio.Group()
+
+    title = make_text(label_text, BLACK, scale=FONT_MEDIUM, position=(10, 10))
+    widget_group.append(title)
+
+    box_x = 10
+    box_y = 40
+    box_width = display.width - 20
+    box_height = 20
+    outline = make_rect(box_x, box_y, box_width, box_height, BLACK)
+    widget_group.append(outline)
+
+    fill_bitmap = displayio.Bitmap(box_width, box_height, 1)
+    fill_palette = displayio.Palette(1)
+    fill_palette[0] = RED
+    fill = displayio.TileGrid(fill_bitmap, pixel_shader=fill_palette, x=box_x, y=box_y)
+    widget_group.append(fill)
+
+    score_label = make_text("0", BLACK, scale=FONT_MEDIUM, position=(box_x + box_width + 5, box_y - 5))
+    widget_group.append(score_label)
+
+    return widget_group, fill, fill_bitmap, score_label
+
 # ----- QWST Controller Functions -----
 i2c = busio.I2C(board.SCL, board.SDA)
 device = I2CDevice(i2c, 0x21)
@@ -94,22 +122,8 @@ BUTTON_MAPPING = {
     '+': 0xB, '-': 0x5
 }
 
-BUTTON_TO_LED = {'L': 1, 'R': 2, 'Y': 3, 'A': 4}
 led_state = 0b0000
 last_button_state = 0
-
-# ----- Display Group Setup -----
-splash = displayio.Group()
-splash.append(make_background(WHITE, display.width, display.height))
-splash.append(make_inner_rect(GRAY, display.width, display.height, BORDER))
-splash.append(make_text("Hello World!", PEACH, scale=FONT_MEDIUM, position=(10, 80)))
-splash.append(make_rect(30, 60, 30, 60, RED))
-
-# Create a text group for dynamic button press display
-button_text_group = make_text("", BLACK, scale=FONT_SMALL, position=(10, 10))
-splash.append(button_text_group)
-
-display.root_group = splash
 
 # ----- QWST Functions -----
 def write_register_16bit(reg, value):
@@ -133,11 +147,16 @@ def update_leds():
             output |= (1 << LED_MAPPING[i])
     write_register_16bit(OUTPUT_PORT0, output)
 
-def toggle_led(led_num):
+def toggle_led_by_index(led_num):
     global led_state
     if 1 <= led_num <= 4:
         led_state ^= (1 << (led_num - 1))
         update_leds()
+
+def toggle_all_leds():
+    global led_state
+    led_state ^= 0b1111
+    update_leds()
 
 def clear_leds():
     global led_state
@@ -153,20 +172,65 @@ def init_qwst():
     except OSError as e:
         print(f"Error initializing QwSTPad: {e}")
 
-# ----- Init and Setup -----
+# ----- Question Flow Function -----
+def question(variable_name, min_score, max_score):
+    # Ensure the CSV file exists with headers
+    try:
+        if CSV_FILENAME not in os.listdir():
+            print("Creating CSV file with header...")
+            with open(CSV_FILENAME, "w") as f:
+                print("Writing header to new CSV file")
+                f.write("timestamp,variable,score")
+        else:
+            print("CSV file already exists.")
+    except OSError as e:
+        print(f"⚠️ Cannot access filesystem: {e}")
+    splash = displayio.Group()
+    splash.append(make_background(WHITE, display.width, display.height))
+    display.root_group = splash
+
+    widget, fill, fill_bitmap, score_label = create_score_widget(variable_name)
+    splash.append(widget)
+
+    score = min_score
+    global last_button_state
+    debounce_time = 0.2
+
+    while True:
+        button_state = read_buttons()
+
+        for button, bit_pos in BUTTON_MAPPING.items():
+            if (button_state & (1 << bit_pos)) and not (last_button_state & (1 << bit_pos)):
+                if button == 'R' and score < max_score:
+                    score += 1
+                elif button == 'L' and score > min_score:
+                    score -= 1
+                elif button == 'A':
+                    now = time.localtime()
+                    timestamp = "{:04}-{:02}-{:02} {:02}:{:02}:{:02}".format(*now[:6])
+                    try:
+                        print(f"Saving to CSV: {timestamp},{variable_name},{score}")
+                        with open(CSV_FILENAME, "a") as f:
+                            f.write(f"{timestamp},{variable_name},{score}")
+                            print("Write successful")
+                    except OSError:
+                        print("⚠️ Could not write to file. Is the filesystem read-only?")
+                    return
+
+                score_label[0].text = str(score)
+                bar_width = int(((score - min_score) / (max_score - min_score)) * fill_bitmap.width)
+                for x in range(fill_bitmap.width):
+                    for y in range(fill_bitmap.height):
+                        fill_bitmap[x, y] = 1 if x < bar_width else 0
+
+        last_button_state = button_state
+        time.sleep(debounce_time)
+
+# ----- Init and Run Loop -----
 init_qwst()
 clear_leds()
 
-# ----- Main Loop -----
 while True:
-    button_state = read_buttons()
-
-    for button, bit_pos in BUTTON_MAPPING.items():
-        if (button_state & (1 << bit_pos)) and not (last_button_state & (1 << bit_pos)):
-            # Update the text inside the group (index 0 is the label)
-            button_text_group[0].text = f"Pressed: {button}"
-            if button in BUTTON_TO_LED:
-                toggle_led(BUTTON_TO_LED[button])
-
-    last_button_state = button_state
-    time.sleep(0.1)
+    question("comfort", 0, 3)
+    question("clarity", 0, 5)
+    question("confidence", 0, 10)
