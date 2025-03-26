@@ -176,15 +176,17 @@ def init_qwst():
 def question(variable_name, min_score, max_score):
     # Ensure the CSV file exists with headers
     try:
-        if CSV_FILENAME not in os.listdir():
+        try:
+            os.stat(CSV_FILENAME)
+            print("CSV file already exists.")
+        except OSError:
             print("Creating CSV file with header...")
             with open(CSV_FILENAME, "w") as f:
                 print("Writing header to new CSV file")
-                f.write("timestamp,variable,score")
-        else:
-            print("CSV file already exists.")
+                f.write("timestamp,variable,score\n")
     except OSError as e:
         print(f"⚠️ Cannot access filesystem: {e}")
+
     splash = displayio.Group()
     splash.append(make_background(WHITE, display.width, display.height))
     display.root_group = splash
@@ -211,7 +213,7 @@ def question(variable_name, min_score, max_score):
                     try:
                         print(f"Saving to CSV: {timestamp},{variable_name},{score}")
                         with open(CSV_FILENAME, "a") as f:
-                            f.write(f"{timestamp},{variable_name},{score}")
+                            f.write(f"{timestamp},{variable_name},{score}\n")
                             print("Write successful")
                     except OSError:
                         print("⚠️ Could not write to file. Is the filesystem read-only?")
