@@ -442,7 +442,7 @@ def emoji_question(variable_name, min_score, max_score, variable_code=None):
 
 
 # ----- Volume Bar Question -----
-def volume_question(variable_name, max_level=5, variable_code=None):
+def volume_question(variable_name, max_level=6, variable_code=None):
     try:
         try:
             os.stat(CSV_FILENAME)
@@ -462,7 +462,7 @@ def volume_question(variable_name, max_level=5, variable_code=None):
     bar_group = displayio.Group()
     splash.append(bar_group)
 
-    base_x = 20
+    base_x = 40
     base_y = display.height - 30
     spacing = 10
     bar_width = 8
@@ -516,7 +516,8 @@ def volume_question(variable_name, max_level=5, variable_code=None):
         time.sleep(debounce_time)
 
 # ----- Question Flow -----
-def progress_question(variable_name, min_score, max_score, variable_code=None, use_emoji=False, stepped_bar=False):
+def progress_question(variable_name, min_score, max_score, variable_code=None,
+                      bar_color_1=WHITE, bar_color_2=RED):
     try:
         try:
             os.stat(CSV_FILENAME)
@@ -536,23 +537,30 @@ def progress_question(variable_name, min_score, max_score, variable_code=None, u
     widget.append(title)
 
     box_x = 20
-    box_y = 70
+    box_y = 60
     box_width = display.width - 40
     box_height = 30
-    outline = make_rect(box_x, box_y, box_width, box_height, DARK_GRAY)
+    
+    # Outline
+    outline = make_rect(box_x-5, box_y-5, box_width+10, box_height+10, DARK_GRAY)
     widget.append(outline)
+    # Bar background
+    bar_bg = make_rect(box_x, box_y, box_width, box_height, bar_color_2)
+    widget.append(bar_bg)
 
-    fill_bitmap = displayio.Bitmap(box_width, box_height, 1)
-    fill_palette = displayio.Palette(1)
-    fill_palette[0] = RED
-    fill = displayio.TileGrid(fill_bitmap, pixel_shader=fill_palette, x=box_x, y=box_y)
-    widget.append(fill)
+    # Bar fill (will be resized on update)
+    bar_fill_bitmap = displayio.Bitmap(box_width, box_height, 1)
+    bar_fill_palette = displayio.Palette(1)
+    bar_fill_palette[0] = bar_color_1
+    bar_fill = displayio.TileGrid(bar_fill_bitmap, pixel_shader=bar_fill_palette, x=box_x, y=box_y)
+    widget.append(bar_fill)
 
-    score_label = make_text("0", BLACK, font=FONT, scale=SCALE_MED,
-                            position=(box_x + box_width // 2 - 8, box_y + box_height // 2 - 6))
+
+
+    score_label = make_text("0", BLACK, font=FONT, scale=SCALE_BIG,
+                            position=(box_x + box_width // 2 - 8, box_y+50 + box_height // 2 - 7))
     widget.append(score_label)
 
-    
     splash.append(widget)
 
     score = min_score
@@ -584,16 +592,12 @@ def progress_question(variable_name, min_score, max_score, variable_code=None, u
                         return
 
                 score_label[0].text = str(score)
-                if stepped_bar:
-                    steps = max_score - min_score + 1
-                    draw_step_bar(fill_bitmap, steps, score - min_score + 1)
-                else:
-                    bar_width = int(((score - min_score) / (max_score - min_score)) * fill_bitmap.width)
-                    for x in range(fill_bitmap.width):
-                        for y in range(fill_bitmap.height):
-                            fill_bitmap[x, y] = 1 if x < bar_width else 0
-                fill_palette[0] = get_score_color(score, min_score, max_score)
-                
+
+                # Update bar fill
+                bar_width = int(((score - min_score) / (max_score - min_score)) * box_width)
+                for x in range(box_width):
+                    for y in range(box_height):
+                        bar_fill_bitmap[x, y] = 1 if x < bar_width else 0
 
         last_button_state = button_state
         time.sleep(debounce_time)
@@ -605,16 +609,18 @@ show_welcome("Press A to begin rating")
 
 
 while True:
-    binary_question("Would you like tea or coffee?", "drink_pref", left_label="Tea", right_label="Coffee")
-    show_transition("Thanks!", 0.75)
+    
+        # Volume-style bar
+    volume_question("Gradient Bars", max_level=6, variable_code="volume_1")
+    show_transition("Next: Progress Bar", 1.0)
+    
+        # Plain numeric bar
+    progress_question("Basic scale 0–5", 0, 5, "plain_scale")
+    show_transition("Next: YesNo", 0.75)
     
     binary_question("Do you want cheese?", "cheese_yn", left_label="Yes", right_label="No")
-    show_transition("Thanks!", 0.75)
+    show_transition("Next: Emoji (2)", 0.75)
  
-    # Plain numeric bar
-    progress_question("Basic scale 0–3", 0, 3, "plain_scale", use_emoji=False, stepped_bar=False)
-    show_transition("Next: Emoji Scale", 0.75)
-
     # 2-point emoji selection
     emoji_question("Emoji pick (2)", 0, 1, "emoji_2")
     show_transition("Next: Emoji (3)", 0.75)
@@ -625,8 +631,6 @@ while True:
 
     # 5-point emoji selection
     emoji_question("Emoji pick (5)", 0, 4, "emoji_5")
-    show_transition("Next: Numeric bar", 0.75)
 
-    # Volume-style bar
-    volume_question("Volume style bar", max_level=6, variable_code="volume_1")
     show_transition("Looping...", 1.0)
+Next
