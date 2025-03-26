@@ -173,7 +173,7 @@ def init_qwst():
         print(f"Error initializing QwSTPad: {e}")
 
 # ----- Question Flow Function -----
-def question(variable_name, min_score, max_score):
+def question(variable_name, min_score, max_score, variable_code=None):
     # Ensure the CSV file exists with headers
     try:
         try:
@@ -203,21 +203,26 @@ def question(variable_name, min_score, max_score):
 
         for button, bit_pos in BUTTON_MAPPING.items():
             if (button_state & (1 << bit_pos)) and not (last_button_state & (1 << bit_pos)):
+
                 if button == 'R' and score < max_score:
                     score += 1
                 elif button == 'L' and score > min_score:
                     score -= 1
                 elif button == 'A':
                     now = time.localtime()
-                    timestamp = "{:04}-{:02}-{:02} {:02}:{:02}:{:02}".format(*now[:6])
+                    timestamp = str(time.mktime(now))
                     try:
-                        print(f"Saving to CSV: {timestamp},{variable_name},{score}")
+                        code = variable_code if variable_code else variable_name
+                        print(f"Saving to CSV: {timestamp},{code},{score}")
                         with open(CSV_FILENAME, "a") as f:
-                            f.write(f"{timestamp},{variable_name},{score}\n")
+                            f.write(f"{timestamp},{code},{score}\n")
                             print("Write successful")
-                    except OSError:
-                        print("⚠️ Could not write to file. Is the filesystem read-only?")
-                    return
+                        last_button_state = button_state
+                        return
+                    except OSError as e:
+                        print(f"⚠️ Could not write to file: {e}")
+                        last_button_state = button_state
+                        return
 
                 score_label[0].text = str(score)
                 bar_width = int(((score - min_score) / (max_score - min_score)) * fill_bitmap.width)
@@ -233,6 +238,6 @@ init_qwst()
 clear_leds()
 
 while True:
-    question("comfort", 0, 3)
-    question("clarity", 0, 5)
-    question("confidence", 0, 10)
+    question("comfort", 0, 3, "c")
+    question("clarity", 0, 5, "l")
+    question("confidence", 0, 10, "f")
