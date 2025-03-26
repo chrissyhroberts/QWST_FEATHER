@@ -58,6 +58,66 @@ TEXT_COLOR  = 0xFFFF00
 display = board.DISPLAY
 
 # ----- Display Drawing Functions -----
+def make_face_bitmap(face_type):
+    # Create a 12x12 pixel bitmap for face_type: "happy", "neutral", "sad", "very_happy", "very_sad"
+    # Create a 12x12 pixel bitmap for face_type: "happy", "neutral", "sad"
+    bitmap = displayio.Bitmap(12, 12, 2)
+    palette = displayio.Palette(2)
+    palette[0] = WHITE
+    palette[1] = BLACK
+
+    # Fill white
+    for x in range(12):
+        for y in range(12):
+            bitmap[x, y] = 0
+
+    # Eyes
+    for dx in (3, 8):
+        bitmap[dx, 4] = 1
+
+    # Mouths
+    if face_type == "very_happy":
+        bitmap[3, 8] = 1
+        bitmap[4, 9] = 1
+        bitmap[5, 10] = 1
+        bitmap[6, 10] = 1
+        bitmap[7, 10] = 1
+        bitmap[8, 9] = 1
+        bitmap[9, 8] = 1
+    elif face_type == "happy":
+        bitmap[4, 8] = 1
+        bitmap[5, 9] = 1
+        bitmap[6, 9] = 1
+        bitmap[7, 9] = 1
+        bitmap[8, 8] = 1
+    elif face_type == "neutral":
+        for x in range(4, 9):
+            bitmap[x, 8] = 1
+    elif face_type == "sad":
+        bitmap[4, 9] = 1
+        bitmap[5, 8] = 1
+        bitmap[6, 8] = 1
+        bitmap[7, 8] = 1
+        bitmap[8, 9] = 1
+    elif face_type == "very_sad":
+        bitmap[3, 10] = 1
+        bitmap[4, 9] = 1
+        bitmap[5, 8] = 1
+        bitmap[6, 8] = 1
+        bitmap[7, 8] = 1
+        bitmap[8, 9] = 1
+        bitmap[9, 10] = 1
+        bitmap[4, 9] = 1
+        bitmap[5, 8] = 1
+        bitmap[6, 8] = 1
+        bitmap[7, 8] = 1
+        bitmap[8, 9] = 1
+
+    face = displayio.TileGrid(bitmap, pixel_shader=palette)
+    group = displayio.Group(scale=3, x=0, y=0)
+    group.append(face)
+    return group
+
 def make_text(text, color, font=None, scale=1, position=(0, 0)):
     if font is None:
         font = FONT
@@ -91,19 +151,15 @@ def get_score_color(score, min_score, max_score):
     green = int(255 * ratio)
     return (red << 16) | (green << 8)
 
-# ----- Emoji Helper -----
-def get_emoji(score, min_score, max_score):
-    ratio = (score - min_score) / (max_score - min_score)
-    if ratio <= 0.2:
-        return "😞"
-    elif ratio <= 0.4:
-        return "🙁"
-    elif ratio <= 0.6:
-        return "😐"
-    elif ratio <= 0.8:
-        return "🙂"
-    else:
-        return "😄"
+
+# ----- Stepped Bar Drawer -----
+def draw_step_bar(bitmap, steps, filled):
+    step_width = bitmap.width // steps
+    for i in range(steps):
+        value = 1 if i < filled else 0
+        for x in range(i * step_width, min((i + 1) * step_width, bitmap.width)):
+            for y in range(bitmap.height):
+                bitmap[x, y] = value
 
 # ----- Welcome Screen -----
 def show_welcome(text="Welcome! Press A to begin"):
@@ -124,15 +180,15 @@ def show_welcome(text="Welcome! Press A to begin"):
         time.sleep(0.1)
 
 # ----- Transition Screen -----
-def show_transition():
+def show_transition(text="Next...", duration=0.5):
     splash = displayio.Group()
     splash.append(make_gradient(display.width, display.height, DARK_GRAY, BLACK))
-    wait_label = make_text("Next...", WHITE, font=FONT, scale=SCALE_MED,
+    wait_label = make_text(text, WHITE, font=FONT, scale=SCALE_MED,
                            position=(display.width // 2 - 20, display.height // 2 - 5))
     splash.append(wait_label)
     display.root_group = splash
-    time.sleep(0.5)
-
+    time.sleep(duration)
+  
 # ----- QWST Controller Functions -----
 i2c = busio.I2C(board.SCL, board.SDA)
 device = I2CDevice(i2c, 0x21)
@@ -196,8 +252,112 @@ def init_qwst():
     except OSError as e:
         print(f"Error initializing QwSTPad: {e}")
 
+# ----- Emoji Selection Flow -----
+def emoji_question(variable_name, min_score, max_score, variable_code=None):
+    try:
+        try:
+            os.stat(CSV_FILENAME)
+        except OSError:
+            with open(CSV_FILENAME, "w") as f:
+                f.write("timestamp,variable,score
+")
+    except OSError as e:
+        print(f"⚠️ Cannot access filesystem: {e}")
+
+    splash = displayio.Group()
+    splash.append(make_gradient(display.width, display.height, NAVY, SKY_BLUE))
+    display.root_group = splash
+
+    count = max_score - min_score + 1
+
+    if count == 2:
+        face_types = ["sad", "happy"]
+    elif count == 3:
+        face_types = ["sad", "neutral", "happy"]
+    elif count == 5:
+        face_types = ["very_sad", "sad", "neutral", "happy", "very_happy"]
+    else:
+        face_types = ["neutral"] * count
+
+    emoji_group = displayio.Group()
+
+    # Question text
+    title = make_text(variable_name, WHITE, font=FONT, scale=SCALE_MED, position=(10, 10))
+    splash.append(title)
+    spacing = display.width // count
+    y_pos = display.height // 2
+
+    emoji_labels = []
+    for i in range(count):
+        face_type = face_types[i]
+        x = spacing * i + spacing // 2 - 6
+        face_group = make_face_bitmap(face_type)
+        face_group.x = x
+        face_group.y = y_pos
+        emoji_group.append(face_group)
+        emoji_labels.append(face_group)
+
+        # Label under face
+        face_labels = {
+            "very_sad": "Very Sad",
+            "sad": "Sad",
+            "neutral": "Okay",
+            "happy": "Happy",
+            "very_happy": "Very Happy"
+        }
+        label_text = face_labels.get(face_type, "?")
+        label_y = y_pos + 40
+        label_x = x - 4 if len(label_text) < 6 else x - 10
+        emoji_label = make_text(label_text, WHITE, scale=SCALE_SMALL, position=(label_x, label_y))
+        emoji_group.append(emoji_label)
+
+    # Selection Box
+    box_width = 38  # Slightly larger to pad 3x scale
+    box_height = 38
+    box_y = y_pos - 4
+    selector = make_rect(spacing // 2 - box_width // 2, box_y, box_width, box_height, RED)
+    emoji_group.insert(0, selector)
+
+    splash.append(emoji_group)
+
+    score = min_score
+    selected_index = 0
+    global last_button_state
+    debounce_time = 0.2
+
+    while True:
+        button_state = read_buttons()
+
+        for button, bit_pos in BUTTON_MAPPING.items():
+            if (button_state & (1 << bit_pos)) and not (last_button_state & (1 << bit_pos)):
+
+                if button == 'R' and selected_index < count - 1:
+                    selected_index += 1
+                elif button == 'L' and selected_index > 0:
+                    selected_index -= 1
+                elif button == 'A':
+                    now = time.localtime()
+                    timestamp = str(time.mktime(now))
+                    try:
+                        code = variable_code if variable_code else variable_name
+                        with open(CSV_FILENAME, "a") as f:
+                            f.write(f"{timestamp},{code},{selected_index + min_score}
+")
+                        last_button_state = button_state
+                        return
+                    except OSError as e:
+                        print(f"⚠️ Could not write to file: {e}")
+                        last_button_state = button_state
+                        return
+
+                selector.x = spacing * selected_index + spacing // 2 - box_width // 2
+
+        last_button_state = button_state
+        time.sleep(debounce_time)
+
+
 # ----- Question Flow -----
-def question(variable_name, min_score, max_score, variable_code=None, use_emoji=False):
+def question(variable_name, min_score, max_score, variable_code=None, use_emoji=False, stepped_bar=False):
     try:
         try:
             os.stat(CSV_FILENAME)
@@ -233,13 +393,7 @@ def question(variable_name, min_score, max_score, variable_code=None, use_emoji=
                             position=(box_x + box_width // 2 - 8, box_y + box_height // 2 - 6))
     widget.append(score_label)
 
-    if use_emoji:
-        emoji_label = make_text(get_emoji(min_score, min_score, max_score), BLACK, font=FONT, scale=SCALE_MED,
-                                position=(box_x + box_width + 10, box_y))
-        widget.append(emoji_label)
-    else:
-        emoji_label = None
-
+    
     splash.append(widget)
 
     score = min_score
@@ -271,13 +425,16 @@ def question(variable_name, min_score, max_score, variable_code=None, use_emoji=
                         return
 
                 score_label[0].text = str(score)
-                bar_width = int(((score - min_score) / (max_score - min_score)) * fill_bitmap.width)
-                for x in range(fill_bitmap.width):
-                    for y in range(fill_bitmap.height):
-                        fill_bitmap[x, y] = 1 if x < bar_width else 0
+                if stepped_bar:
+                    steps = max_score - min_score + 1
+                    draw_step_bar(fill_bitmap, steps, score - min_score + 1)
+                else:
+                    bar_width = int(((score - min_score) / (max_score - min_score)) * fill_bitmap.width)
+                    for x in range(fill_bitmap.width):
+                        for y in range(fill_bitmap.height):
+                            fill_bitmap[x, y] = 1 if x < bar_width else 0
                 fill_palette[0] = get_score_color(score, min_score, max_score)
-                if emoji_label:
-                    emoji_label[0].text = get_emoji(score, min_score, max_score)
+                
 
         last_button_state = button_state
         time.sleep(debounce_time)
@@ -287,10 +444,20 @@ init_qwst()
 clear_leds()
 show_welcome("Press A to begin rating")
 
+
 while True:
-    question("comfort", 0, 3, "c", use_emoji=False)
-    show_transition()
-    question("clarity", 0, 5, "l", use_emoji=True)
-    show_transition()
-    question("confidence", 0, 10, "f", use_emoji=False)
-    show_transition()
+    # Plain numeric bar
+    question("Basic scale 0–3", 0, 3, "plain_scale", use_emoji=False, stepped_bar=False)
+    show_transition("Next: Emoji Scale", 0.75)
+
+    # 2-point emoji selection
+    emoji_question("Emoji pick (2)", 0, 1, "emoji_2")
+    show_transition("Next: Emoji (3)", 0.75)
+
+    # 3-point emoji selection
+    emoji_question("Emoji pick (3)", 0, 2, "emoji_3")
+    show_transition("Next: Emoji (5)", 0.75)
+
+    # 5-point emoji selection
+    emoji_question("Emoji pick (5)", 0, 4, "emoji_5")
+    show_transition("Next: Numeric bar", 0.75)
