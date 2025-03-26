@@ -259,8 +259,7 @@ def emoji_question(variable_name, min_score, max_score, variable_code=None):
             os.stat(CSV_FILENAME)
         except OSError:
             with open(CSV_FILENAME, "w") as f:
-                f.write("timestamp,variable,score
-")
+                f.write("timestamp,variable,score")
     except OSError as e:
         print(f"⚠️ Cannot access filesystem: {e}")
 
@@ -290,7 +289,7 @@ def emoji_question(variable_name, min_score, max_score, variable_code=None):
     emoji_labels = []
     for i in range(count):
         face_type = face_types[i]
-        x = spacing * i + spacing // 2 - 6
+        x = spacing * i + spacing // 2 - 18  # Adjusted to center 36px-wide emoji
         face_group = make_face_bitmap(face_type)
         face_group.x = x
         face_group.y = y_pos
@@ -307,14 +306,14 @@ def emoji_question(variable_name, min_score, max_score, variable_code=None):
         }
         label_text = face_labels.get(face_type, "?")
         label_y = y_pos + 40
-        label_x = x - 4 if len(label_text) < 6 else x - 10
+        label_x = x + 18 - len(label_text) * 3  # Center label under 36px emoji
         emoji_label = make_text(label_text, WHITE, scale=SCALE_SMALL, position=(label_x, label_y))
         emoji_group.append(emoji_label)
 
     # Selection Box
     box_width = 38  # Slightly larger to pad 3x scale
     box_height = 38
-    box_y = y_pos - 4
+    box_y = y_pos - 10  # Align better with scaled emoji face
     selector = make_rect(spacing // 2 - box_width // 2, box_y, box_width, box_height, RED)
     emoji_group.insert(0, selector)
 
@@ -341,8 +340,7 @@ def emoji_question(variable_name, min_score, max_score, variable_code=None):
                     try:
                         code = variable_code if variable_code else variable_name
                         with open(CSV_FILENAME, "a") as f:
-                            f.write(f"{timestamp},{code},{selected_index + min_score}
-")
+                            f.write(f"{timestamp},{code},{selected_index + min_score}")
                         last_button_state = button_state
                         return
                     except OSError as e:
