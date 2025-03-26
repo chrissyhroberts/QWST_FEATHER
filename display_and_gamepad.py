@@ -354,6 +354,80 @@ def emoji_question(variable_name, min_score, max_score, variable_code=None):
         time.sleep(debounce_time)
 
 
+# ----- Volume Bar Question -----
+def volume_question(variable_name, max_level=5, variable_code=None):
+    try:
+        try:
+            os.stat(CSV_FILENAME)
+        except OSError:
+            with open(CSV_FILENAME, "w") as f:
+                f.write("timestamp,variable,score")
+    except OSError as e:
+        print(f"⚠️ Cannot access filesystem: {e}")
+
+    splash = displayio.Group()
+    splash.append(make_gradient(display.width, display.height, BLACK, DARK_GRAY))
+    display.root_group = splash
+
+    title = make_text(variable_name, WHITE, scale=SCALE_MED, position=(10, 10))
+    splash.append(title)
+
+    bar_group = displayio.Group()
+    splash.append(bar_group)
+
+    base_x = 20
+    base_y = display.height - 30
+    spacing = 10
+    bar_width = 8
+    max_height = 40
+
+    bars = []
+    for i in range(max_level):
+        height = int((i + 1) / max_level * max_height)
+        y = base_y - height
+        bar = make_rect(base_x + i * (bar_width + spacing), y, bar_width, height, LIGHT_GRAY)
+        bars.append(bar)
+        bar_group.append(bar)
+
+    score = 0
+    global last_button_state
+    debounce_time = 0.2
+
+    def update_bars(level):
+        for i, bar in enumerate(bars):
+            color = GREEN if i < level else LIGHT_GRAY
+            bar.pixel_shader[0] = color
+
+    update_bars(score)
+
+    while True:
+        button_state = read_buttons()
+
+        for button, bit_pos in BUTTON_MAPPING.items():
+            if (button_state & (1 << bit_pos)) and not (last_button_state & (1 << bit_pos)):
+                if button == 'R' and score < max_level:
+                    score += 1
+                elif button == 'L' and score > 0:
+                    score -= 1
+                elif button == 'A':
+                    now = time.localtime()
+                    timestamp = str(time.mktime(now))
+                    try:
+                        code = variable_code if variable_code else variable_name
+                        with open(CSV_FILENAME, "a") as f:
+                            f.write(f"{timestamp},{code},{score}")
+                        last_button_state = button_state
+                        return
+                    except OSError as e:
+                        print(f"⚠️ Could not write to file: {e}")
+                        last_button_state = button_state
+                        return
+
+                update_bars(score)
+
+        last_button_state = button_state
+        time.sleep(debounce_time)
+
 # ----- Question Flow -----
 def question(variable_name, min_score, max_score, variable_code=None, use_emoji=False, stepped_bar=False):
     try:
@@ -459,3 +533,7 @@ while True:
     # 5-point emoji selection
     emoji_question("Emoji pick (5)", 0, 4, "emoji_5")
     show_transition("Next: Numeric bar", 0.75)
+
+    # Volume-style bar
+    volume_question("Volume style bar", max_level=6, variable_code="volume_1")
+    show_transition("Looping...", 1.0)
