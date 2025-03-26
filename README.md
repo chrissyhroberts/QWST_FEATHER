@@ -39,43 +39,26 @@ storage.remount("/", readonly=False)```
 
 ## TO DO
 
-🔘 1. Binary Choice (Yes/No, True/False)
-Two big buttons or icons (✓ and ✗, thumbs up/down)
-Selection box toggles between them
-A shows selection
-🧠 Good for: consent questions, Boolean fields.
 
-🎯 2. Target Slider / Dial
+* Target Slider / Dial
 Horizontal dial or arc with a pointer that rotates or slides
 Visually resembles a thermostat or volume knob
 Use L/R to rotate, A to confirm
-🧠 Good for: intuitive range feedback (e.g., "How warm do you feel?").
+Good for: intuitive range feedback (e.g., "How warm do you feel?").
 
-🌈 3. Color Picker
-Display colored swatches (e.g., red, yellow, green, blue, purple)
-Move selection box left/right to choose a color
-A confirms
-🧠 Good for: mood tracking, qualitative impressions.
-
-🟦 4. Grid Selector (2D Positioning)
+* Grid Selector (2D Positioning)
 3×3 grid (or 4×4) where user navigates with U/D/L/R
 A selects
 Label rows/columns (e.g., "importance" vs "urgency")
-🧠 Good for: matrix-style questions, categorization tasks.
+Good for: matrix-style questions, categorization tasks.
 
-🔢 5. Number Pad Entry
-Mimic a calculator keypad (3×3 + enter)
+*  Number Pad Entry
+Mimic a calculator keypad (3×3 + 0 + enter)
 Display current number at top
 Use A to enter, B to clear, arrows to navigate
-🧠 Good for: entering exact values (age, weight, count).
+Good for: entering exact values (age, weight, count).
 
-📈 6. Trend Indicator
-Show three icons: ⬆️ (better), ➡️ (same), ⬇️ (worse)
-Choose which best describes change since last time
-🧠 Good for: measuring improvement or decline over time.
-
-🎨 7. Custom Icon Sets
+* Custom Icon Sets
 Replace faces with other meaningful symbols: food portions, pain scales, activity levels, etc.
-🧠 Great for thematic surveys.
 
-Would you like me to start building one of these out? I’d suggest the grid selector or binary choice next since they visually complement what you’ve already built.
+
