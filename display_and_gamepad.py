@@ -16,10 +16,11 @@ import struct
 BORDER = 10
 CSV_FILENAME = "/data_log.csv"
 
-# ----- Fonts -----
-FONT_BIG = 4
-FONT_MEDIUM = 3
-FONT_SMALL= 3
+# ----- Font and Scale -----
+FONT = terminalio.FONT
+SCALE_BIG = 2
+SCALE_MED = 1
+SCALE_SMALL = 1
 
 # ----- Basic Colors -----
 BLACK       = 0x000000
@@ -57,21 +58,9 @@ TEXT_COLOR  = 0xFFFF00
 display = board.DISPLAY
 
 # ----- Display Drawing Functions -----
-def make_background(color, width, height):
-    bitmap = displayio.Bitmap(width, height, 1)
-    palette = displayio.Palette(1)
-    palette[0] = color
-    return displayio.TileGrid(bitmap, pixel_shader=palette, x=0, y=0)
-
-def make_inner_rect(color, width, height, border):
-    inner_width = width - border * 2
-    inner_height = height - border * 2
-    bitmap = displayio.Bitmap(inner_width, inner_height, 1)
-    palette = displayio.Palette(1)
-    palette[0] = color
-    return displayio.TileGrid(bitmap, pixel_shader=palette, x=border, y=border)
-
-def make_text(text, color, font=terminalio.FONT, scale=1, position=(0, 0)):
+def make_text(text, color, font=None, scale=1, position=(0, 0)):
+    if font is None:
+        font = FONT
     text_area = label.Label(font, text=text, color=color)
     text_group = displayio.Group(scale=scale, x=position[0], y=position[1])
     text_group.append(text_area)
@@ -83,30 +72,66 @@ def make_rect(x, y, width, height, color):
     palette[0] = color
     return displayio.TileGrid(bitmap, pixel_shader=palette, x=x, y=y)
 
-# ----- Data Entry Widget -----
-def create_score_widget(label_text):
-    widget_group = displayio.Group()
+def make_gradient(width, height, color_start, color_end):
+    bitmap = displayio.Bitmap(width, height, height)
+    palette = displayio.Palette(height)
+    for y in range(height):
+        ratio = y / height
+        r = int(((color_end >> 16) & 0xFF) * ratio + ((color_start >> 16) & 0xFF) * (1 - ratio))
+        g = int(((color_end >> 8) & 0xFF) * ratio + ((color_start >> 8) & 0xFF) * (1 - ratio))
+        b = int((color_end & 0xFF) * ratio + (color_start & 0xFF) * (1 - ratio))
+        palette[y] = (r << 16) | (g << 8) | b
+        for x in range(width):
+            bitmap[x, y] = y
+    return displayio.TileGrid(bitmap, pixel_shader=palette, x=0, y=0)
 
-    title = make_text(label_text, BLACK, scale=FONT_MEDIUM, position=(10, 10))
-    widget_group.append(title)
+def get_score_color(score, min_score, max_score):
+    ratio = (score - min_score) / (max_score - min_score)
+    red = int(255 * (1 - ratio))
+    green = int(255 * ratio)
+    return (red << 16) | (green << 8)
 
-    box_x = 10
-    box_y = 40
-    box_width = display.width - 20
-    box_height = 20
-    outline = make_rect(box_x, box_y, box_width, box_height, BLACK)
-    widget_group.append(outline)
+# ----- Emoji Helper -----
+def get_emoji(score, min_score, max_score):
+    ratio = (score - min_score) / (max_score - min_score)
+    if ratio <= 0.2:
+        return "😞"
+    elif ratio <= 0.4:
+        return "🙁"
+    elif ratio <= 0.6:
+        return "😐"
+    elif ratio <= 0.8:
+        return "🙂"
+    else:
+        return "😄"
 
-    fill_bitmap = displayio.Bitmap(box_width, box_height, 1)
-    fill_palette = displayio.Palette(1)
-    fill_palette[0] = RED
-    fill = displayio.TileGrid(fill_bitmap, pixel_shader=fill_palette, x=box_x, y=box_y)
-    widget_group.append(fill)
+# ----- Welcome Screen -----
+def show_welcome(text="Welcome! Press A to begin"):
+    splash = displayio.Group()
+    splash.append(make_gradient(display.width, display.height, NAVY, SKY_BLUE))
+    welcome_label = make_text(text, WHITE, font=FONT, scale=SCALE_MED,
+                              position=(20, display.height // 2 - 10))
+    splash.append(welcome_label)
+    display.root_group = splash
 
-    score_label = make_text("0", BLACK, scale=FONT_MEDIUM, position=(box_x + box_width + 5, box_y - 5))
-    widget_group.append(score_label)
+    global last_button_state
+    while True:
+        button_state = read_buttons()
+        if (button_state & (1 << BUTTON_MAPPING['A'])) and not (last_button_state & (1 << BUTTON_MAPPING['A'])):
+            last_button_state = button_state
+            return
+        last_button_state = button_state
+        time.sleep(0.1)
 
-    return widget_group, fill, fill_bitmap, score_label
+# ----- Transition Screen -----
+def show_transition():
+    splash = displayio.Group()
+    splash.append(make_gradient(display.width, display.height, DARK_GRAY, BLACK))
+    wait_label = make_text("Next...", WHITE, font=FONT, scale=SCALE_MED,
+                           position=(display.width // 2 - 20, display.height // 2 - 5))
+    splash.append(wait_label)
+    display.root_group = splash
+    time.sleep(0.5)
 
 # ----- QWST Controller Functions -----
 i2c = busio.I2C(board.SCL, board.SDA)
@@ -125,7 +150,6 @@ BUTTON_MAPPING = {
 led_state = 0b0000
 last_button_state = 0
 
-# ----- QWST Functions -----
 def write_register_16bit(reg, value):
     buffer = struct.pack("<H", value)
     with device:
@@ -172,26 +196,50 @@ def init_qwst():
     except OSError as e:
         print(f"Error initializing QwSTPad: {e}")
 
-# ----- Question Flow Function -----
-def question(variable_name, min_score, max_score, variable_code=None):
-    # Ensure the CSV file exists with headers
+# ----- Question Flow -----
+def question(variable_name, min_score, max_score, variable_code=None, use_emoji=False):
     try:
         try:
             os.stat(CSV_FILENAME)
-            print("CSV file already exists.")
         except OSError:
-            print("Creating CSV file with header...")
             with open(CSV_FILENAME, "w") as f:
-                print("Writing header to new CSV file")
                 f.write("timestamp,variable,score\n")
     except OSError as e:
         print(f"⚠️ Cannot access filesystem: {e}")
 
     splash = displayio.Group()
-    splash.append(make_background(WHITE, display.width, display.height))
+    splash.append(make_gradient(display.width, display.height, SKY_BLUE, WHITE))
     display.root_group = splash
 
-    widget, fill, fill_bitmap, score_label = create_score_widget(variable_name)
+    widget = displayio.Group()
+
+    title = make_text(variable_name, DARK_GRAY, font=FONT, scale=SCALE_BIG, position=(20, 20))
+    widget.append(title)
+
+    box_x = 20
+    box_y = 70
+    box_width = display.width - 40
+    box_height = 30
+    outline = make_rect(box_x, box_y, box_width, box_height, DARK_GRAY)
+    widget.append(outline)
+
+    fill_bitmap = displayio.Bitmap(box_width, box_height, 1)
+    fill_palette = displayio.Palette(1)
+    fill_palette[0] = RED
+    fill = displayio.TileGrid(fill_bitmap, pixel_shader=fill_palette, x=box_x, y=box_y)
+    widget.append(fill)
+
+    score_label = make_text("0", BLACK, font=FONT, scale=SCALE_MED,
+                            position=(box_x + box_width // 2 - 8, box_y + box_height // 2 - 6))
+    widget.append(score_label)
+
+    if use_emoji:
+        emoji_label = make_text(get_emoji(min_score, min_score, max_score), BLACK, font=FONT, scale=SCALE_MED,
+                                position=(box_x + box_width + 10, box_y))
+        widget.append(emoji_label)
+    else:
+        emoji_label = None
+
     splash.append(widget)
 
     score = min_score
@@ -213,10 +261,8 @@ def question(variable_name, min_score, max_score, variable_code=None):
                     timestamp = str(time.mktime(now))
                     try:
                         code = variable_code if variable_code else variable_name
-                        print(f"Saving to CSV: {timestamp},{code},{score}")
                         with open(CSV_FILENAME, "a") as f:
                             f.write(f"{timestamp},{code},{score}\n")
-                            print("Write successful")
                         last_button_state = button_state
                         return
                     except OSError as e:
@@ -229,6 +275,9 @@ def question(variable_name, min_score, max_score, variable_code=None):
                 for x in range(fill_bitmap.width):
                     for y in range(fill_bitmap.height):
                         fill_bitmap[x, y] = 1 if x < bar_width else 0
+                fill_palette[0] = get_score_color(score, min_score, max_score)
+                if emoji_label:
+                    emoji_label[0].text = get_emoji(score, min_score, max_score)
 
         last_button_state = button_state
         time.sleep(debounce_time)
@@ -236,8 +285,12 @@ def question(variable_name, min_score, max_score, variable_code=None):
 # ----- Init and Run Loop -----
 init_qwst()
 clear_leds()
+show_welcome("Press A to begin rating")
 
 while True:
-    question("comfort", 0, 3, "c")
-    question("clarity", 0, 5, "l")
-    question("confidence", 0, 10, "f")
+    question("comfort", 0, 3, "c", use_emoji=False)
+    show_transition()
+    question("clarity", 0, 5, "l", use_emoji=True)
+    show_transition()
+    question("confidence", 0, 10, "f", use_emoji=False)
+    show_transition()

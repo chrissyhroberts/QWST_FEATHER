@@ -1,6 +1,12 @@
 # QWST_FEATHER
 
-## Factory reset board at https://learn.adafruit.com/adafruit-esp32-s3-tft-feather/factory-reset#factory-reset-and-bootloader-repair-3107941
+Factory reset board using browswer based esptool 
+https://adafruit.github.io/Adafruit_WebSerial_ESPTool/
+Instructions here
+https://learn.adafruit.com/adafruit-esp32-s3-tft-feather/factory-reset#factory-reset-and-bootloader-repair-3107941
+
+
+Good version of circuitpython here https://circuitpython.org/board/adafruit_feather_esp32s3_tft/
 
 ## Flash
 
