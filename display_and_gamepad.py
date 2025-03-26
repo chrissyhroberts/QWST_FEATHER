@@ -151,6 +151,17 @@ def get_score_color(score, min_score, max_score):
     green = int(255 * ratio)
     return (red << 16) | (green << 8)
 
+def draw_outline_box(group, x, y, width, height, color=BLACK, thickness=3):
+    # Draws a rectangular border
+    # Top
+    group.append(make_rect(x, y, width, thickness, color))
+    # Bottom
+    group.append(make_rect(x, y + height - thickness, width, thickness, color))
+    # Left
+    group.append(make_rect(x, y, thickness, height, color))
+    # Right
+    group.append(make_rect(x + width - thickness, y, thickness, height, color))
+
 
 # ----- Stepped Bar Drawer -----
 def draw_step_bar(bitmap, steps, filled):
@@ -251,6 +262,82 @@ def init_qwst():
         print("QwSTPad initialized!")
     except OSError as e:
         print(f"Error initializing QwSTPad: {e}")
+
+# BINARY QUESTIONS
+def binary_question(variable_name, variable_code=None, left_label="YES", right_label="NO"):
+    try:
+        try:
+            os.stat(CSV_FILENAME)
+        except OSError:
+            with open(CSV_FILENAME, "w") as f:
+                f.write("timestamp,variable,score\n")
+    except OSError as e:
+        print(f"⚠️ Cannot access filesystem: {e}")
+
+    splash = displayio.Group()
+    splash.append(make_gradient(display.width, display.height, BLACK, DARK_GRAY))
+    display.root_group = splash
+
+    # Title
+    title = make_text(variable_name, WHITE, scale=SCALE_BIG, position=(10, 10))
+    splash.append(title)
+
+    # Box dimensions
+    box_width = display.width // 2
+    box_height = display.height - 60
+    y_offset = 50
+
+    # Draw static left/right boxes
+    left_box = make_rect(0, y_offset, box_width, box_height, SKY_BLUE)
+    right_box = make_rect(box_width, y_offset, box_width, box_height, PEACH)
+    splash.append(left_box)
+    splash.append(right_box)
+
+    # Labels
+    left_label_text = make_text(left_label, BLACK, scale=3, position=(20, y_offset + 40))
+    right_label_text = make_text(right_label, BLACK, scale=3, position=(box_width + 20, y_offset + 40))
+    splash.append(left_label_text)
+    splash.append(right_label_text)
+
+    # Selector border outline
+    selector_outline = displayio.Group()
+    draw_outline_box(selector_outline, 4, y_offset + 4, box_width - 8, box_height - 8, BLACK, thickness=4)
+    splash.append(selector_outline)
+
+
+    selected = 0  # 0 = left, 1 = right
+    global last_button_state
+    debounce_time = 0.2
+
+    while True:
+        button_state = read_buttons()
+
+        for button, bit_pos in BUTTON_MAPPING.items():
+            if (button_state & (1 << bit_pos)) and not (last_button_state & (1 << bit_pos)):
+
+                if button == 'R':
+                    selected = 1
+                    selector_outline.x = box_width
+                elif button == 'L':
+                    selected = 0
+                    selector_outline.x = 0
+                elif button == 'A':
+                    now = time.localtime()
+                    timestamp = str(time.mktime(now))
+                    score = 1 if selected == 0 else 0  # 1 = left, 0 = right
+                    try:
+                        code = variable_code if variable_code else variable_name
+                        with open(CSV_FILENAME, "a") as f:
+                            f.write(f"{timestamp},{code},{score}\n")
+                        last_button_state = button_state
+                        return
+                    except OSError as e:
+                        print(f"⚠️ Could not write to file: {e}")
+                        last_button_state = button_state
+                        return
+
+        last_button_state = button_state
+        time.sleep(debounce_time)
 
 # ----- Emoji Selection Flow -----
 def emoji_question(variable_name, min_score, max_score, variable_code=None):
@@ -429,7 +516,7 @@ def volume_question(variable_name, max_level=5, variable_code=None):
         time.sleep(debounce_time)
 
 # ----- Question Flow -----
-def question(variable_name, min_score, max_score, variable_code=None, use_emoji=False, stepped_bar=False):
+def progress_question(variable_name, min_score, max_score, variable_code=None, use_emoji=False, stepped_bar=False):
     try:
         try:
             os.stat(CSV_FILENAME)
@@ -518,8 +605,14 @@ show_welcome("Press A to begin rating")
 
 
 while True:
+    binary_question("Would you like tea or coffee?", "drink_pref", left_label="Tea", right_label="Coffee")
+    show_transition("Thanks!", 0.75)
+    
+    binary_question("Do you want cheese?", "cheese_yn", left_label="Yes", right_label="No")
+    show_transition("Thanks!", 0.75)
+ 
     # Plain numeric bar
-    question("Basic scale 0–3", 0, 3, "plain_scale", use_emoji=False, stepped_bar=False)
+    progress_question("Basic scale 0–3", 0, 3, "plain_scale", use_emoji=False, stepped_bar=False)
     show_transition("Next: Emoji Scale", 0.75)
 
     # 2-point emoji selection
